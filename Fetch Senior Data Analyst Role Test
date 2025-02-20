@@ -1,0 +1,48 @@
+---Q1 Are there any data quality issues present?
+Users table:
+birthdate - some fields are left blank - why is there not a prefer not to say option?
+state - some fields are left blank
+language - some fields are left blank and some fields have an ISO code but not all
+gender - some fields are left blank adn some have prefer not to say
+Transaction table:
+there are duplicatie rows of data across all fields except final_quantity and final_sale - Is this done intentionally or do the final_quantity and final_sale fields need to be adjusted in some way?
+purchase date and scan date are not in the same datetimestamp format
+store name - inconsistencies with nomenclature - lots of mispellings
+barcode - inconsistently missing some values
+final_quantity - inconsistency with the data type/field format zero vs 1
+final_sale - some values are missing, the decimla placement is inconsistent - some are 1 decimal, 2 or none
+Products table:
+all fields have inconsistencies with missing values
+barcode - since this is the unique identifier used to connect the transaction table, with the missing values, it is impossible to connect some records to the otehr table
+
+---Q2 Are there any fields that are challenging to understand?
+Yes - The final_quantity and final_sale fields of the transaction table - rows are duplicative on the rows of data except these but it is unclear as to why and if it is intentional or a bug
+Yes - If the Entity Relationship Model was not provided, it might be dificult to conclude that id in the users table was the same field as user_id in the transactions table 
+
+---Q3 What are the top 5 brands by receipts scanned among users 21 and over?
+select p.brand, count(distinct t.receipt_id) as receipts_scanned
+from trantactions t 
+left join products p on t.barcode = p.barcode
+left join users u on t.user_id=u.id
+where u.birth_date <= current_date - interval '21 years'
+group by 1
+order by 2 desc
+limit 5;
+
+---Q4 What are the top 5 brands by sales among users that have had their account for at least six months?
+select distinct p.brand, count(distinct t.receipt_id) as receipts_scanned
+from trantactions t 
+left join products p on t.barcode = p.barcode
+left join users u on t.user_id=u.id
+where created_date <= current_date - interval '6 months'
+group by 1
+order by 2 desc
+limit 5;
+
+---Q5 What is the percentage of sales in the Health & Wellness category by generation?
+select generation, category_1, sum(final_sale) as sales
+from trantactions t 
+left join products p on t.barcode = p.barcode
+left join users u on t.user_id=u.id
+group by 1
+
