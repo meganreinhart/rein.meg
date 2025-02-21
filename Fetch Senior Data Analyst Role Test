@@ -71,22 +71,19 @@ group by 1) ranked_brands
 where brand_rank <=5
 order by 1 asc;
 
-
-
-
 ---Q4 What are the top 5 brands by sales among users that have had their account for at least six months?
-select distinct p.brand, sum(****EDIT HEREEEE***
+select distinct on t.receipt_id, t.receipt_id, p.brand, max(case when t.final_sale is not null and <> '' then t.final_sale::numeric else null end) as final_complete_sale
 from trantactions t 
 -- join with the products table on the the shared barcode field
 left join products p on t.barcode = p.barcode
 -- join with the users table on the shared id field
 left join users u on t.user_id=u.id
 -- filtering results to isolate users who created an account at least 6 months ago
-where created_date <= current_date - interval '6 months'
+where u.created_date <= current_date - interval '6 months'
 -- grouping results by brands
-group by 1
+group by 1, 2
 -- sorting results by the most sales to the least sales
-order by 2 desc
+order by 1, 3 desc
 -- cutting of results at 5 top rows
 limit 5;
 
