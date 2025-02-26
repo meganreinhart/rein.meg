@@ -23,18 +23,41 @@ from users;
 -- The queries above identify how many unique values are possible for each field to pull from the table, shed light onto any inconsistencies in the number of characters and formatting of the field values, and also identify if there are missing or null values in the data.
 
 Transaction table:
-there are duplicatie rows of data across all fields except final_quantity and final_sale - Is this done intentionally or do the final_quantity and final_sale fields need to be adjusted in some way?
-purchase date and scan date are not in the same datetimestamp format
-store name - inconsistencies with nomenclature - lots of mispellings
-barcode - inconsistently missing some values
-final_quantity - inconsistency with the data type/field format zero vs 1 vs 0.26
-final_sale - some values are missing, the decimla placement is inconsistent - some are 1 decimal, 2 or none
+-- There are duplicate receipt ids rows of data that do not present any patterns. The only pieces of each data row that are not duplicated completely are the final_quantity and final_sale fields --more details are provided in Q2
+select distinct pg_typeof(purchase_date) as purchase_date, pg_typeof(scan_date) as scan_date
+from transactions;
+-- The query above looks at the data type of the two date fields in the table. While scan date and purchase date are both date timestamp formats, they vary in the type of date timestamp format from each other which can cause confusion.
+-- check for missing fields:
+select count(*) as missing_barcode 
+from transactions
+where barcode is null or barcode='';
+
 Products table:
-all fields have inconsistencies with missing values
-barcode - since this is the unique identifier used to connect the transaction table, with the missing values, it is impossible to connect some records to the other table
+-- check for missing fields:
+select count(*) as missing_category_1 
+from products
+where category_1 is null or category_1='';
+select count(*) as missing_category_2
+from products
+where category_2 is null or category_2='';
+select count(*) as missing_category_3
+from products
+where category_3 is null or category_3='';
+select count(*) as missing_category_4
+from products
+where category_4 is null or category_4='';
+select count(*) as missing_brand
+from products
+where brand is null or brand='';
+select count(*) as missing_manufacturer
+from products
+where manufacturer is null or manufacturer='';
+select count(*) as missing_barcode
+from products
+where barcode is null or barcode='';
 
 -- Q2 Are there any fields that are challenging to understand?
--- Yes, the final_quantity and final_sale fields of the transaction table are quite confusing due to the fact that the data in both fields is inconsistently formatted (i.e. numeric, varchar., etc.), sometimes completely missing and also sometimes duplicative. As a result of the inconsistencies in these fields, it is dificult to decipher what they truly represent and raises the question of - are these intentionally left blank or duplicative or is there a bug in the data entry process? There are numerous other fields across all three provided table that also show inconsistent patterns of missing data (i.e.-barcode, language, birthdate,etc.)
+-- Yes, the final_quantity and final_sale fields of the transaction table are quite confusing due to the fact that the data in both fields is inconsistently formatted (i.e. numeric, varchar., etc.), sometimes completely missing and also sometimes duplicative. As a result of the inconsistencies in these fields, it is difficult to decipher what they truly represent and raises the question of - are these intentionally left blank or duplicative or is there a bug in the data entry process? There are numerous other fields across all three provided table that also show inconsistent patterns of missing data (i.e.-barcode, language, birthdate, etc.)
 select t.receipt_id, t.final_quantity, t.final_sale
 from transactions t
 where t.final_quantity is null
@@ -50,13 +73,13 @@ or t.receipt_id in (
         where count(t1.final_quantity) > 1 or count(t1.final_sale) > 1)
 -- sort data by receipt id
 order by 1;
--- Also, the id in the users table, which corresponds to the user_id in the transactions table, is critical for linking users to their transactions. Without the Entity Relationship Model that was provided, it can be dificult to ascert that id in the users table is the same as user_id in the transactions table. This creates ambiguity that may complicate analytical projects by users who do not have access to the model or may struggle to connect the tables without that important context.
+-- Also, the id in the users table, which corresponds to the user_id in the transactions table, is critical for linking users to their transactions. Without the Entity Relationship Model that was provided, it can be difficult to ensure that id in the users table is the same as user_id in the transactions table. This creates ambiguity that may complicate analytical projects by users who do not have access to the model or may struggle to connect the tables without that important context.
 
 -- Q3 What are the top 5 brands by receipts scanned among users 21 and over?
 -- pull list of brands and the number of unique receipts are associated with each
 select p.brand, count(distinct t.receipt_id) as receipts_scanned
-from trantactions t 
--- join with the products table on the the shared barcode field
+from transactions t 
+-- join with the products table on the shared barcode field
 left join products p on t.barcode = p.barcode
 -- join with the users table on the shared id field
 left join users u on t.user_id=u.id
@@ -72,8 +95,8 @@ limit 5;
 -- OR a window function can be used to pull these results:
 -- pull list of brands and the number of unique receipts are associated with each and their numeric rank
 select  rank() over (order by count(distinct t.receipt_id) desc) as brand_rank, p.brand, count(distinct t.receipt_id) as receipts_scanned
-from trantactions t
--- join with the products table on the the shared barcode field
+from transactions t
+-- join with the products table on the shared barcode field
 left join products p on t.barcode = p.barcode
 -- join with the users table on the shared id field
 left join users u on t.user_id=u.id
@@ -91,7 +114,7 @@ from
 -- subquery to clean up the data in the sale value column and get rid of blank records and fixing formatting and also pull distinct receipt ids and brands
 (select t.receipt_id, p.brand, max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(7,2) else null end) as final_sale_value
 from transactions t 
--- join with the products table on the the shared barcode field
+-- join with the products table on the shared barcode field
 left join products p on t.barcode = p.barcode
 -- join with the users table on the shared id field
 left join users u on t.user_id=u.id
@@ -121,8 +144,8 @@ from
         when extract(year from u.birth_date) >= 2013 then 'Generation Alpha'
         else 'Unknown'
 end as generation, category_1, max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(12,2) else null end) as final_sales
-from trantactions t 
--- join with the products table on the the shared barcode field
+from transactions t 
+-- join with the products table on the shared barcode field
 left join products p on t.barcode = p.barcode
 -- join with the users table on the shared id field
 left join users u on t.user_id=u.id
@@ -139,7 +162,7 @@ group by 1;
 select ranking, user_id, cast(daily_avg_receipts as integer) as daily_avg_receipts
 from
 -- subquery to apply a percentile rank and numerical rank to each user based on their daily average receipt upload count
-(select user_id, count(distinct receipt_id) * 1.0 / count(distinct scan_date) as daily_avg_receipts, percent_rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scan_date) desc) as percentile_rank, rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scane_date) desc) as ranking
+(select user_id, count(distinct receipt_id) * 1.0 / count(distinct scan_date) as daily_avg_receipts, percent_rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scan_date) desc) as percentile_rank, rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scan_date) desc) as ranking
 from transactions t
 -- grouping results by user
 group by 1
@@ -151,6 +174,7 @@ order by 1 asc;
 
 -- Q7 Which is the leading brand in the Dips & Salsa category?
 leading brand is group sales by brand under the cate 2 - dips and salsa and sort asc
+
 
 -- Q8 At what percent has Fetch grown year over year?
 -- There is not enough historical transaction data provided to compare multiple years of performance against each other, but there are user records back to 2014 so I will make the assumption that in this situation, growth at Fetch is based on how many new accounts are set up and will compare the total # of new accounts in 2024 vs. 2023. To evaluate transactional growth, I would request for more historical data.
