@@ -34,10 +34,26 @@ all fields have inconsistencies with missing values
 barcode - since this is the unique identifier used to connect the transaction table, with the missing values, it is impossible to connect some records to the other table
 
 -- Q2 Are there any fields that are challenging to understand?
-Yes - The final_quantity and final_sale fields of the transaction table - rows are duplicative on the rows of data except these but it is unclear as to why and if it is intentional or a bug
-Yes - If the Entity Relationship Model was not provided, it might be dificult to conclude that id in the users table was the same field as user_id in the transactions table 
+-- Yes, the final_quantity and final_sale fields of the transaction table are quite confusing due to the fact that the data in both fields is inconsistently formatted (i.e. numeric, varchar., etc.), sometimes completely missing and also sometimes duplicative. As a result of the inconsistencies in these fields, it is dificult to decipher what they truly represent and raises the question of - are these intentionally left blank or duplicative or is there a bug in the data entry process? There are numerous other fields across all three provided table that also show inconsistent patterns of missing data (i.e.-barcode, language, birthdate,etc.)
+select t.receipt_id, t.final_quantity, t.final_sale
+from transactions t
+where t.final_quantity is null
+or t.final_qauntity = ''
+or t.final_sale is null 
+or t.final_sale =''
+or t.receipt_id in (
+-- subquery to find duplicative receipt_ids
+        select t1.receipt_id
+        from transactions t1
+        group by 1
+-- check for inconsistent final_quantity or final_sale
+        where count(t1.final_quantity) > 1 or count(t1.final_sale) > 1)
+-- sort data by receipt id
+order by 1;
+-- Also, the id in the users table, which corresponds to the user_id in the transactions table, is critical for linking users to their transactions. Without the Entity Relationship Model that was provided, it can be dificult to ascert that id in the users table is the same as user_id in the transactions table. This creates ambiguity that may complicate analytical projects by users who do not have access to the model or may struggle to connect the tables without that important context.
 
 -- Q3 What are the top 5 brands by receipts scanned among users 21 and over?
+-- pull list of brands and the number of unique receipts are associated with each
 select p.brand, count(distinct t.receipt_id) as receipts_scanned
 from trantactions t 
 -- join with the products table on the the shared barcode field
@@ -54,6 +70,7 @@ order by 2 desc
 limit 5;
 
 -- OR a window function can be used to pull these results:
+-- pull list of brands and the number of unique receipts are associated with each and their numeric rank
 select  rank() over (order by count(distinct t.receipt_id) desc) as brand_rank, p.brand, count(distinct t.receipt_id) as receipts_scanned
 from trantactions t
 -- join with the products table on the the shared barcode field
@@ -67,11 +84,11 @@ group by 1,2
 -- sorting results by the most receipts to the least receipts
 order by 1 asc;
 
----Q4 What are the top 5 brands by sales among users that have had their account for at least six months?
---rank brands by the sum of sales
+-- Q4 What are the top 5 brands by sales among users that have had their account for at least six months?
+-- rank brands by the sum of sales
 select rank() over (order by sum(final_sale_value) desc) as brand_rank, brand, sum(final_sale_value) as total_sales
 from
---subquery to clean up the data in the sale value column and get rid of blank records and fixing formatting and also pull distinct receipt ids and brands
+-- subquery to clean up the data in the sale value column and get rid of blank records and fixing formatting and also pull distinct receipt ids and brands
 (select t.receipt_id, p.brand, max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(7,2) else null end) as final_sale_value
 from transactions t 
 -- join with the products table on the the shared barcode field
@@ -83,17 +100,17 @@ where u.created_date <= current_date - interval '6 months'
 -- grouping results by receipt id, brand and max sale value
 group by 1, 2
 ) as sales_clean
-where total_sales> 0 
+where total_sales > 0 
 -- sorting results by the most sales to the least sales
 order by 1 asc
 -- cutting off results at 5 top rows
 limit 5;
 
----Q5 What is the percentage of sales in the Health & Wellness category by generation?
---pull % of Health & Wellness sales for each generation
+-- Q5 What is the percentage of sales in the Health & Wellness category by generation?
+-- pull % of Health & Wellness sales for each generation
 select generation, sum(final_sales) * 1.0 / sum(final_sales) over (partition by generation) as total_sales_percent
 from
---subquery to clean up the data in the sale value column and get rid of blank records and fixing formatting, pull in the Healthy & Wellness category only and also generate the specific generation groupings based off of birth dates
+-- subquery to clean up the data in the sale value column and get rid of blank records and fixing formatting, pull in the Healthy & Wellness category only and also generate the specific generation groupings based off of birth dates
 (select distinct t.receipt_id, case when birth_date is null then 'Unknown'
         when extract(year from u.birth_date) <= 1927 then 'Before Silent Generation'
         when extract(year from u.birth_date) between 1928 and 1945 then 'Silent Generation'
@@ -116,17 +133,30 @@ group by 1,2,3) as sales_clean
 -- grouping results by generation
 group by 1;
 
----Q6 Who are Fetch’s power users?
-power users are top 10% of users by the number of uploaded receipts they have since they started their accounts
+-- Q6 Who are Fetch’s power users?
+-- I would consider a Fetch 'power user' as someone who is in the top 10% quartile of users when it comes to the daily average number of receipts that they have uploaded across a set period of time. Since the data provided spans 6/12/24-9/8/24, I will pull a list of Fetch's 'power users' during that time period along with their daily average number of unique receipts that they have uploaded during the period. Looking at a daily average metric effectively captures consistent engagement and activity levels, illustrating how active they are on Fetch and their value to Fetch. 
+-- pull the power users list, their ranking and their total daily average count of uploaded receipts across the period
+select ranking, user_id, cast(daily_avg_receipts as integer) as daily_avg_receipts
+from
+-- subquery to apply a percentile rank and numerical rank to each user based on their daily average receipt upload count
+(select user_id, count(distinct receipt_id) * 1.0 / count(distinct scan_date) as daily_avg_receipts, percent_rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scan_date) desc) as percentile_rank, rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scane_date) desc) as ranking
+from transactions t
+-- grouping results by user
+group by 1
+) as user_receipts
+-- filtering the data to only look at the top 10%
+where percentile_rank <= 0.10
+-- sorting results by users with the highest daily average to the lowest
+order by 1 asc;
 
----Q7 Which is the leading brand in the Dips & Salsa category?
+-- Q7 Which is the leading brand in the Dips & Salsa category?
 leading brand is group sales by brand under the cate 2 - dips and salsa and sort asc
 
----Q8 At what percent has Fetch grown year over year?
+-- Q8 At what percent has Fetch grown year over year?
 -- There is not enough historical transaction data provided to compare multiple years of performance against each other, but there are user records back to 2014 so I will make the assumption that in this situation, growth at Fetch is based on how many new accounts are set up and will compare the total # of new accounts in 2024 vs. 2023. To evaluate transactional growth, I would request for more historical data.
---pull rounded % YoY growth comparing 2024 to 2023
+-- pull rounded % YoY growth comparing 2024 to 2023
 select round(total_new_users_2024 - total_new_users_2023)* 100.0 / nullif(total_new_users_2023,0),2) as yoy_growth_percentage_2024
 from
---subquery to pull distinct counts of new users in 2024 and 2023
+-- subquery to pull distinct counts of new users in 2024 and 2023
 (select count(distinct case when extract(year from created_date) = 2024 then id end) as total_new_users_2024, count(distinct case when extract(year from created_date) = 2023 then id end) as total_new_users_2023
 from users) as user_counts;
