@@ -60,6 +60,7 @@ where barcode is null or barcode='';
 -- Yes, the final_quantity and final_sale fields of the transaction table are quite confusing due to the fact that the data in both fields is inconsistently formatted (i.e. numeric, varchar., etc.), sometimes completely missing and also sometimes duplicative. As a result of the inconsistencies in these fields, it is difficult to decipher what they truly represent and raises the question of - are these intentionally left blank or duplicative or is there a bug in the data entry process? There are numerous other fields across all three provided table that also show inconsistent patterns of missing data (i.e.-barcode, language, birthdate, etc.)
 select t.receipt_id, t.final_quantity, t.final_sale
 from transactions t
+-- filtering the data to catch the anomolies in the final_sale and final_quantity fields
 where t.final_quantity is null
 or t.final_qauntity = ''
 or t.final_sale is null 
@@ -112,7 +113,9 @@ order by 1 asc;
 select rank() over (order by sum(final_sale_value) desc) as brand_rank, brand, sum(final_sale_value) as total_sales
 from
 -- subquery to clean up the data in the sale value column and get rid of blank records and fixing formatting and also pull distinct receipt ids and brands
-(select t.receipt_id, p.brand, max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(7,2) else null end) as final_sale_value
+(select t.receipt_id, p.brand, 
+-- There is a lot of ambiguity around what the final_sale field illustrates and the below is done based on the assumption that the highest value for the receipt id is what should be taken as the source of truth and the unique value to tie to the receitp id.
+max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(7,2) else null end) as final_sale_value
 from transactions t 
 -- join with the products table on the shared barcode field
 left join products p on t.barcode = p.barcode
@@ -123,6 +126,7 @@ where u.created_date <= current_date - interval '6 months'
 -- grouping results by receipt id, brand and max sale value
 group by 1, 2
 ) as sales_clean
+-- filtering the data to exclude brands with no sales
 where total_sales > 0 
 -- sorting results by the most sales to the least sales
 order by 1 asc
@@ -143,7 +147,8 @@ from
         when extract(year from u.birth_date) between 1997 and 2012 then  'Generation Z'
         when extract(year from u.birth_date) >= 2013 then 'Generation Alpha'
         else 'Unknown'
-end as generation, category_1, max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(12,2) else null end) as final_sales
+end as generation, category_1, 
+max(case when t.final_sale is not null and t.final_sale <> ‘ ' then t.final_sale::numeric(12,2) else null end) as final_sales
 from transactions t 
 -- join with the products table on the shared barcode field
 left join products p on t.barcode = p.barcode
@@ -174,13 +179,33 @@ order by 1 asc;
 
 -- Q7 Which is the leading brand in the Dips & Salsa category?
 leading brand is group sales by brand under the cate 2 - dips and salsa and sort asc
-
+-- I would categorize the 'leading brand' as one who would have the most daily average number of receipts uploaded during the period (6/12/24-9/8/24), similarly to the previous question. By looking at the daily average count of uploaded receipts, we can fully capture the brand with the most consistent engagement and activity levels. 
+-- pull top Dips & Salsa brand based on daily average receipt uploads
+select rank() over (order by count(distinct receipt_id) * 1.0 / count(distinct scan_date) desc) as ranking, brand, cast(count(distinct receipt_id) * 1.0 / count(distinct scan_date) as integer) as daily_avg_receipts
+from transactions t
+-- join with the products table on the shared barcode field
+left join products p on t.barcode = p.barcode
+-- filtering the data to only include Dips & Salsa brands
+where p.category_2 = 'Dips & Salsa'
+-- grouping results by brand
+group by brand
+-- sorting results by the rank of the most daily avg receipts to the least
+order by rank asc
+-- only pulling the top brand from the results
+limit 1;
 
 -- Q8 At what percent has Fetch grown year over year?
 -- There is not enough historical transaction data provided to compare multiple years of performance against each other, but there are user records back to 2014 so I will make the assumption that in this situation, growth at Fetch is based on how many new accounts are set up and will compare the total # of new accounts in 2024 vs. 2023. To evaluate transactional growth, I would request for more historical data.
 -- pull rounded % YoY growth comparing 2024 to 2023
 select round(total_new_users_2024 - total_new_users_2023)* 100.0 / nullif(total_new_users_2023,0),2) as yoy_growth_percentage_2024
 from
--- subquery to pull distinct counts of new users in 2024 and 2023
+-- subquery to pull distinct counts of new users in 2024 and 2023 based on their account created year
 (select count(distinct case when extract(year from created_date) = 2024 then id end) as total_new_users_2024, count(distinct case when extract(year from created_date) = 2023 then id end) as total_new_users_2023
 from users) as user_counts;
+
+
+-- Q9 - Third: communicate with stakeholders -
+-- Good morning! I hope your day is off to a great start. I wanted to share an update on a project I have been working on using our transaction, product and user data.
+-- First, I have some questions related to the quality of this data and am looking for clarification on what final_sale and final_quanity represent in the transactions table. The final_sale and final_quantity fields show inconsistent patterns of missing, duplicative and other misaligning with varying formats. Additionally, there are duplicative records of the receipt_ids in this table where those two fields are the only differences row by row. Is this structure intentionally left that way or could there be a bug that we should investigate in the data entry process? I also would like to address that the birth_date, state, language and gender fields in the users table have inconsistencely missing values and the language field does not present a uniform data format. The products table has similar inconsistencies when it comes to missing values across the category classifications, manufacturer and brand fields. Are these expected gaps as well or perhaps another bug that we should investigate? Lastly, I would like to call attention to the fact that the transactions table has missing barcode ids, making it dificult to accurately identify records and connect them to other data tables and should be investigated. 
+-- I want to bring your attention to a concerning trend that I have unconvered in our new user growth. After experiencing steady growth year over year in attracting new users and even reaching an all time high of nearly 27,000 new users in 2022, we have experienced a 42% decline in 2023 and 25% decline in 2024.
+-- To further investigate this decline, I would like to request additional data, including user engagement metrics (login frequency, time spent on platform, feature interaction rates, etc.), marketing campaign performance data, any data we have regarding user feedback and any data we have related to referral sources. By gathering and analyzing this information, we will be able to identify the underlying factors contributing to the decline and develop targeted strategies to enhance our user acquisition and reverse this trend.
